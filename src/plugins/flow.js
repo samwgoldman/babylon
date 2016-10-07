@@ -205,15 +205,7 @@ pp.flowParseTypeAlias = function (node) {
 pp.flowParseTypeParameter = function () {
   let node = this.startNode();
 
-  let variance;
-  if (this.match(tt.plusMin)) {
-    if (this.state.value === "+") {
-      variance = "plus";
-    } else if (this.state.value === "-") {
-      variance = "minus";
-    }
-    this.eat(tt.plusMin);
-  }
+  let variance = this.flowParseVariance();
 
   let ident = this.flowParseTypeAnnotatableIdentifier(false, false);
   node.name = ident.name;
@@ -278,7 +270,7 @@ pp.flowParseObjectPropertyKey = function () {
   return (this.match(tt.num) || this.match(tt.string)) ? this.parseExprAtom() : this.parseIdentifier(true);
 };
 
-pp.flowParseObjectTypeIndexer = function (node, isStatic) {
+pp.flowParseObjectTypeIndexer = function (node, isStatic, variance) {
   node.static = isStatic;
 
   this.expect(tt.bracketL);
@@ -286,6 +278,7 @@ pp.flowParseObjectTypeIndexer = function (node, isStatic) {
   node.key = this.flowParseTypeInitialiser();
   this.expect(tt.bracketR);
   node.value = this.flowParseTypeInitialiser();
+  node.variance = variance;
 
   this.flowObjectTypeSemicolon();
   return this.finishNode(node, "ObjectTypeIndexer");
@@ -368,9 +361,15 @@ pp.flowParseObjectType = function (allowStatic, allowExact) {
       isStatic = true;
     }
 
+    let variance = this.flowParseVariance();
+
     if (this.match(tt.bracketL)) {
-      nodeStart.indexers.push(this.flowParseObjectTypeIndexer(node, isStatic));
+      nodeStart.indexers.push(this.flowParseObjectTypeIndexer(node, isStatic, variance));
     } else if (this.match(tt.parenL) || this.isRelational("<")) {
+      if (variance) {
+        this.unexpected(variance.start);
+        variance = null;
+      }
       nodeStart.callProperties.push(this.flowParseObjectTypeCallProperty(node, allowStatic));
     } else {
       if (isStatic && this.match(tt.colon)) {
@@ -380,6 +379,10 @@ pp.flowParseObjectType = function (allowStatic, allowExact) {
       }
       if (this.isRelational("<") || this.match(tt.parenL)) {
         // This is a method property
+        if (variance) {
+          this.unexpected(variance.start);
+          variance = null;
+        }
         nodeStart.properties.push(this.flowParseObjectTypeMethod(startPos, startLoc, isStatic, propertyKey));
       } else {
         if (this.eat(tt.question)) {
@@ -389,6 +392,7 @@ pp.flowParseObjectType = function (allowStatic, allowExact) {
         node.value = this.flowParseTypeInitialiser();
         node.optional = optional;
         node.static = isStatic;
+        node.variance = variance;
         this.flowObjectTypeSemicolon();
         nodeStart.properties.push(this.finishNode(node, "ObjectTypeProperty"));
       }
@@ -726,6 +730,21 @@ pp.typeCastToParameter = function (node) {
   );
 };
 
+pp.flowParseVariance = function() {
+  let variance = null;
+  if (this.match(tt.plusMin)) {
+    variance = this.startNode();
+    if (this.state.value === "+") {
+      variance.kind = "plus";
+    } else if (this.state.value === "-") {
+      variance.kind = "minus";
+    }
+    this.eat(tt.plusMin);
+    this.finishNode(variance, "Variance");
+  }
+  return variance;
+};
+
 export default function (instance) {
   // plain function return types: function name(): string {}
   instance.extend("parseFunctionBody", function (inner) {
@@ -986,6 +1005,10 @@ export default function (instance) {
   // parse type parameters for class methods
   instance.extend("parseClassMethod", function () {
     return function (classBody, method, isGenerator, isAsync) {
+      if (method.variance) {
+        this.unexpected(method.variance.start);
+      }
+      delete method.variance;
       if (this.isRelational("<")) {
         method.typeParameters = this.flowParseTypeParameterDeclaration();
       }
@@ -1018,9 +1041,23 @@ export default function (instance) {
     };
   });
 
+  instance.extend("parsePropertyName", function (inner) {
+    return function (node) {
+      let variance = this.flowParseVariance();
+      let key = inner.call(this, node);
+      node.variance = variance;
+      return key;
+    };
+  });
+
   // parse type parameters for object method shorthand
   instance.extend("parseObjPropValue", function (inner) {
     return function (prop) {
+      if (prop.variance) {
+        this.unexpected(prop.variance.start);
+      }
+      delete prop.variance;
+
       let typeParameters;
 
       // method shorthand
