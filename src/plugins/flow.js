@@ -368,7 +368,6 @@ pp.flowParseObjectType = function (allowStatic, allowExact) {
     } else if (this.match(tt.parenL) || this.isRelational("<")) {
       if (variance) {
         this.unexpected(variance.start);
-        variance = null;
       }
       nodeStart.callProperties.push(this.flowParseObjectTypeCallProperty(node, allowStatic));
     } else {
@@ -381,7 +380,6 @@ pp.flowParseObjectType = function (allowStatic, allowExact) {
         // This is a method property
         if (variance) {
           this.unexpected(variance.start);
-          variance = null;
         }
         nodeStart.properties.push(this.flowParseObjectTypeMethod(startPos, startLoc, isStatic, propertyKey));
       } else {
@@ -739,7 +737,7 @@ pp.flowParseVariance = function() {
     } else if (this.state.value === "-") {
       variance.kind = "minus";
     }
-    this.eat(tt.plusMin);
+    this.next();
     this.finishNode(variance, "Variance");
   }
   return variance;
