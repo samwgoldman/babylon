@@ -1055,7 +1055,7 @@ export default function (instance) {
   instance.extend("parseObjPropValue", function (inner) {
     return function (prop) {
       if (prop.variance) {
-        this.unexpected(prop.start);
+        this.unexpected(prop.variancePos);
       }
       delete prop.variance;
       delete prop.variancePos;
